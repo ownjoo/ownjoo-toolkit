@@ -3,6 +3,8 @@
 import re
 import unittest
 
+from jmespath.exceptions import ParseError
+
 from oj_toolkit.parsing.types import Digger
 
 
@@ -24,7 +26,7 @@ class TestDigger(unittest.TestCase):
     # Digger: an invalid jmespath expression fails at construction time, not first call
     def test_should_fail_fast_on_invalid_digger_expression(self):
         # execute/assess
-        with self.assertRaises(Exception):
+        with self.assertRaises(ParseError):
             Digger(path='user[..name')
 
     # Digger: a string pattern is pre-compiled at construction time

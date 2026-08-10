@@ -136,7 +136,7 @@ class TestTableFormatting(unittest.TestCase):
         self.assertIn("Task 2", result)
         # Should have at least 3 lines (header, separator, data rows)
         lines = result.split("\n")
-        self.assertGreater(len([l for l in lines if l.strip()]), 2)
+        self.assertGreater(len([line for line in lines if line.strip()]), 2)
 
     def test_table_dict_input_detection(self):
         """Test table auto-detects dict input and extracts headers."""
@@ -210,7 +210,7 @@ class TestBoxFormatting(unittest.TestCase):
         self.assertIn("Hello", result)
         self.assertIn("World", result)
         # Should have multiple lines
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         self.assertGreaterEqual(len(lines), 4)  # Top border, 2 content, bottom border
 
     def test_box_with_padding(self):
@@ -404,7 +404,7 @@ class TestVisualConsistency(unittest.TestCase):
         lines = result.split("\n")
 
         # Find all border lines (containing +)
-        border_lines = [l for l in lines if "+" in l and "-" in l]
+        border_lines = [line for line in lines if "+" in line and "-" in line]
 
         # Should have at least 2 border lines (top and bottom)
         self.assertGreaterEqual(len(border_lines), 2)

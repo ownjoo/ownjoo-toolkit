@@ -2,14 +2,7 @@
 Constants for parsing and formatting
 """
 from enum import Enum
-from typing import Callable
 
-# pylint: disable=invalid-name
-DEFAULT_CONVERTER: Callable = lambda value, *args, **kwargs: value
-DEFAULT_VALIDATOR: Callable = lambda value, expected_type, *args, **kwargs: (
-    expected_type is None
-    or (isinstance(expected_type, (type, tuple)) and isinstance(value, expected_type))
-)
 DEFAULT_SEPARATOR: str = ','
 
 

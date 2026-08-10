@@ -1,11 +1,10 @@
 import logging
+import unittest
 from asyncio import run
 from logging import INFO, getLogger
-import unittest
+from typing import AsyncGenerator, Generator
 
-from typing import Generator, AsyncGenerator
-
-from oj_toolkit.logging.decorators import timed_generator, timed_async_generator
+from oj_toolkit.logging.decorators import timed_async_generator, timed_generator
 
 
 def _reset_root_logger():

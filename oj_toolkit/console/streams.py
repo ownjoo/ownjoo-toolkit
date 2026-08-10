@@ -7,8 +7,8 @@ with support for colored output using ANSI escape codes and chainable colored te
 import sys
 from typing import TextIO
 
-from oj_toolkit.console.colors import Color
 from oj_toolkit.console.colored_text import ColoredText
+from oj_toolkit.console.colors import Color
 
 
 class Output:

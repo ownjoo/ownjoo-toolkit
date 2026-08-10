@@ -9,19 +9,29 @@ This module provides functions to safely parse and validate values, including:
 
 import logging
 import re
-from datetime import datetime
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, Callable, Type, TypeVar, overload
 
 import jmespath
 
+from oj_toolkit.parsing.consts import DEFAULT_SEPARATOR, TimeFormats
+
 T = TypeVar('T')
 R = TypeVar('R')
 
-from oj_toolkit.parsing.consts import DEFAULT_CONVERTER, DEFAULT_SEPARATOR, DEFAULT_VALIDATOR, TimeFormats
-
 logger = logging.getLogger(__name__)
+
+
+def DEFAULT_CONVERTER(value: Any, *args: Any, **kwargs: Any) -> Any:  # pylint: disable=invalid-name,unused-argument
+    return value
+
+
+def DEFAULT_VALIDATOR(value: Any, expected_type: Any, *args: Any, **kwargs: Any) -> bool:  # pylint: disable=invalid-name,unused-argument
+    return expected_type is None or (
+        isinstance(expected_type, (type, tuple)) and isinstance(value, expected_type)
+    )
 
 
 def str_to_list(v: str | None = None, separator: str = DEFAULT_SEPARATOR) -> list[str] | None:

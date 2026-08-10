@@ -15,7 +15,8 @@ This library is the single source of truth for shared utilities across ownjoo pr
 - **`logging`** — Standardized logging configuration and progress tracking decorators
 - **`console`** — Terminal and console output utilities (stdout, stderr, formatting)
 - **`data`** — Flexible data handling mixins
-- **`asynchronous`** — Async utilities (chunking, generators)
+- **`asynchronous`** — Async utilities (chunking, generators, coroutine timeouts)
+- **`timing`** — Wall-clock timeout decorator for blocking (synchronous) calls
 
 ## Installation
 
@@ -252,6 +253,39 @@ async def fetch_items_async():
 async for item in fetch_items_async():
     await process(item)
 ```
+
+### Timeouts
+
+```python
+from oj_toolkit import timeout, async_timeout
+
+# Blocking call -- runs on a daemon thread, waits up to `seconds`
+@timeout(seconds=5)
+def slow_call():
+    ...
+
+try:
+    slow_call()
+except TimeoutError as e:
+    print(f'gave up waiting: {e}')
+
+# Coroutine -- built on asyncio.wait_for, actually cancels the inner call
+@async_timeout(seconds=5)
+async def slow_async_call():
+    ...
+
+try:
+    await slow_async_call()
+except TimeoutError as e:
+    print(f'gave up waiting: {e}')
+```
+
+> **Sync vs. async:** `timeout()` can't forcibly kill a thread -- past the deadline it
+> raises and returns control to the caller, but the abandoned call keeps running in the
+> background on a daemon thread (so it never blocks interpreter exit, but it also never
+> stops). `async_timeout()` is stronger: `asyncio.wait_for` actually cancels the inner
+> coroutine at its next `await` point. Prefer `async_timeout` for coroutines; reach for
+> `timeout` only for blocking/sync calls.
 
 ## API Reference
 
@@ -1138,6 +1172,69 @@ async def process():
     async for batch in a_chunks(100, records()):
         await bulk_insert(batch)  # batches of 100, 100, 50
 ```
+
+#### `@async_timeout(seconds=10, error_message=None)`
+
+Decorator that raises `TimeoutError` if the wrapped coroutine runs longer than `seconds`. Built on `asyncio.timeout()`, so the inner coroutine is actually cancelled (not just abandoned) once the deadline passes.
+
+- **Parameters:**
+  - `seconds` (float): Maximum time to wait for the coroutine to complete. Default: `10`
+  - `error_message` (str): Message for the raised `TimeoutError`. Default: the OS-provided `ETIME` message
+
+**Example:**
+
+```python
+from oj_toolkit.asynchronous import async_timeout
+import asyncio
+
+@async_timeout(seconds=2)
+async def slow_call():
+    await asyncio.sleep(5)
+
+try:
+    await slow_call()
+except TimeoutError as e:
+    print(f'gave up waiting: {e}')
+```
+
+> **Note:** `asyncio.timeout()` can also be used directly as an `async with` block to
+> share one deadline across several awaits, rather than bounding a single named
+> function. Reach for that when you need more than "time out this one call".
+> Requires Python 3.11+ -- this project's minimum supported version.
+
+### `timing` Module
+
+#### `@timeout(seconds=10, error_message=None)`
+
+Decorator that raises `TimeoutError` if the wrapped (blocking/synchronous) call runs longer than `seconds`. Runs the call on a daemon thread and waits up to `seconds` for it to finish -- works identically on every platform and from any calling thread, unlike a `signal.alarm`-based timeout (Unix-only, main-thread-only, and unavailable on Windows entirely).
+
+- **Parameters:**
+  - `seconds` (float): Maximum time to wait for the wrapped call to complete. Default: `10`
+  - `error_message` (str): Message for the raised `TimeoutError`. Default: the OS-provided `ETIME` message
+
+**Example:**
+
+```python
+from oj_toolkit.timing import timeout
+import time
+
+@timeout(seconds=2)
+def slow_call():
+    time.sleep(5)
+
+try:
+    slow_call()
+except TimeoutError as e:
+    print(f'gave up waiting: {e}')
+```
+
+> **Limitation:** Python cannot forcibly kill a running thread. Past the deadline,
+> `timeout()` raises and returns control to the caller immediately, but the wrapped
+> function keeps running to completion on its worker thread in the background -- it's
+> abandoned, not aborted. The thread is created with `daemon=True` so an abandoned call
+> never blocks interpreter shutdown. Use this to stop *waiting* on a slow call, not to
+> terminate runaway or CPU-bound work. For coroutines, use `async_timeout` instead,
+> which actually cancels the inner call.
 
 ## Development
 

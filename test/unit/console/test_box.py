@@ -1,10 +1,9 @@
 """Tests for Box class and @in_box decorator."""
 
 import io
+import re
 import unittest
 from unittest.mock import patch
-
-import re
 
 from oj_toolkit.console.box import Box, in_box
 from oj_toolkit.console.colors import Color

@@ -83,7 +83,7 @@ Then create a PR on GitHub. Include:
 ## Code Standards
 
 ### Python Version
-- **Minimum:** Python 3.10+
+- **Minimum:** Python 3.11+
 - Use type hints throughout
 
 ### Imports

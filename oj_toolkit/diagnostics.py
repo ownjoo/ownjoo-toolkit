@@ -40,7 +40,6 @@ import sys
 import threading
 import warnings
 
-
 logger = logging.getLogger('oj_toolkit.diagnostics')
 
 _INSTALLED = False

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oj-toolkit"
-version = "0.3.0"
+version = "0.4.0"
 description = "Centralized shared utilities for ownjoo projects: standardized logging config, type validation, data parsing, console output, and async utilities"
 authors = [
     { name = "Speedy", email = "speedy@ownjoo.org" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "jmespath>=1.0",
 ]
@@ -20,12 +20,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-keywords = ["utilities", "validation", "parsing", "logging", "console", "color", "formatting", "async", "generators"]
+keywords = ["utilities", "validation", "parsing", "logging", "console", "color", "formatting", "async", "generators", "timeout"]
 readme = "README.md"
 
 [project.urls]
@@ -48,7 +47,7 @@ dev = [
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py311"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -67,18 +66,7 @@ exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
-select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "C",    # flake8-comprehensions
-    "B",    # flake8-bugbear
-]
-ignore = [
-    "E501",  # line too long (handled by black)
-]
+target-version = "py311"
 exclude = [
     ".git",
     ".hg",
@@ -88,6 +76,19 @@ exclude = [
     "_build",
     "build",
     "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "C4",   # flake8-comprehensions
+    "B",    # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long (handled by black)
 ]
 
 [tool.pytest.ini_options]
@@ -104,7 +105,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Not required for this project
