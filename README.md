@@ -17,6 +17,7 @@ This library is the single source of truth for shared utilities across ownjoo pr
 - **`data`** — Flexible data handling mixins
 - **`asynchronous`** — Async utilities (chunking, generators, coroutine timeouts)
 - **`timing`** — Wall-clock timeout decorator for blocking (synchronous) calls
+- **`ops`** — Composable, nestable op classes for data-processing/logic chains, with a registry + `compile()` for building the same chains from a declarative spec dict
 
 ## Installation
 
@@ -1235,6 +1236,65 @@ except TimeoutError as e:
 > never blocks interpreter shutdown. Use this to stop *waiting* on a slow call, not to
 > terminate runaway or CPU-bound work. For coroutines, use `async_timeout` instead,
 > which actually cancels the inner call.
+
+### `ops` Module
+
+Small, composable "op" classes that nest to build a data-processing/logic chain, and can
+equally be built from a declarative spec dict via `compile()`. Two "levels":
+
+- **Item-level ops** (`__call__(self, item) -> Any`): conditions (`And`, `Or`, `Xor`,
+  `Not`, `In`, `Eq`, `Ne`, `Gt`, `Lt`, `Ge`, `Le`, `Exists`), control flow (`When`, `Map`,
+  `Sequence`), and structure manipulation (`Extract`, `Broadcast`, `Fanout`, `Merge`).
+- **Stream-level ops** (`__call__(self, iterable) -> Iterator[Any]`): `Iter` (the generic
+  lift of any single-item callable, analogous to Python's `map()` builtin separating "the
+  function" from "the iteration machinery"), `Filter`, `FlatMap`, `GroupBy`, `Join`, `Zip`.
+
+Composition is plain nested constructor calls -- no operator overloading -- which maps
+1:1 onto a declarative spec.
+
+**Example: nested Python construction**
+
+```python
+from oj_toolkit.ops import Filter, In, Iter
+
+pipeline = Iter(fn=str.upper)
+list(pipeline(['a', 'b']))  # ['A', 'B']
+
+only_ok = Filter(condition=In(input='status', value=['ok', 'warn']))
+list(only_ok([{'status': 'ok'}, {'status': 'fail'}]))  # [{'status': 'ok'}]
+```
+
+**Example: the same pipeline from a declarative spec**
+
+```python
+from oj_toolkit.ops import compile as compile_ops
+
+spec = {'type': 'filter', 'condition': {'type': 'in', 'input': 'status', 'value': ['ok', 'warn']}}
+op = compile_ops(spec)
+list(op([{'status': 'ok'}, {'status': 'fail'}]))  # [{'status': 'ok'}]
+```
+
+**Example: fan-out a parent record's children ("enclosure with blades")**
+
+```python
+from oj_toolkit.ops import Broadcast, FlatMap
+
+expand_blades = FlatMap(op=Broadcast(
+    children_path='blades',
+    fields={'enclosure_id': 'enclosure_id', 'location': 'location'},
+))
+list(expand_blades([{
+    'enclosure_id': 'abc', 'location': 'rack1',
+    'blades': [{'serial': 'b1'}, {'serial': 'b2'}],
+}]))
+# [{'enclosure_id': 'abc', 'location': 'rack1', 'serial': 'b1'},
+#  {'enclosure_id': 'abc', 'location': 'rack1', 'serial': 'b2'}]
+```
+
+> **Note:** `compile` shadows the `compile()` builtin. Import it as
+> `from oj_toolkit.ops import compile as compile_ops` (or use the pre-aliased
+> `oj_toolkit.compile_ops` re-export) so it doesn't shadow the builtin in your own
+> module's scope.
 
 ## Development
 

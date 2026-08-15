@@ -10,6 +10,7 @@ Centralized utilities for all ownjoo projects, including:
 - Wall-clock timeout decorators for sync and async calls (timing module)
 - Diagnostics: exception-visibility hooks so no async/thread/finalizer
   error can disappear silently (diagnostics module)
+- Composable, declaratively-compilable data-processing/logic ops (ops module)
 
 Usage:
     from oj_toolkit import validate, get_datetime, str_to_list, dig, dig_many, Digger
@@ -18,6 +19,7 @@ Usage:
     from oj_toolkit import Table, Box, status_line, progress_bar
     from oj_toolkit import install_exception_visibility
     from oj_toolkit import timeout, async_timeout
+    from oj_toolkit import And, Or, Not, When, Iter, Filter, GroupBy, compile_ops
 """
 
 from oj_toolkit.asynchronous import async_timeout
@@ -36,6 +38,38 @@ from oj_toolkit.console import (
 )
 from oj_toolkit.diagnostics import install_exception_visibility
 from oj_toolkit.logging import timed_async_generator, timed_generator
+from oj_toolkit.ops import (
+    And,
+    Broadcast,
+    Eq,
+    Exists,
+    Extract,
+    Fanout,
+    Filter,
+    FlatMap,
+    Ge,
+    GroupBy,
+    Gt,
+    In,
+    ItemOp,
+    Iter,
+    Join,
+    Le,
+    Lt,
+    Map,
+    Merge,
+    Ne,
+    Not,
+    Op,
+    Or,
+    Sequence,
+    StreamOp,
+    When,
+    Xor,
+    Zip,
+)
+from oj_toolkit.ops import compile as compile_ops
+from oj_toolkit.ops import register as register_op
 from oj_toolkit.parsing import Digger, dig, dig_many, get_datetime, str_to_list, validate
 from oj_toolkit.timing import timeout
 
@@ -62,4 +96,34 @@ __all__ = [
     'status_wrapped',
     'timeout',
     'async_timeout',
+    'Op',
+    'ItemOp',
+    'StreamOp',
+    'register_op',
+    'compile_ops',
+    'And',
+    'Or',
+    'Xor',
+    'Not',
+    'In',
+    'Eq',
+    'Ne',
+    'Gt',
+    'Lt',
+    'Ge',
+    'Le',
+    'Exists',
+    'When',
+    'Map',
+    'Sequence',
+    'Iter',
+    'Filter',
+    'FlatMap',
+    'Extract',
+    'Broadcast',
+    'Fanout',
+    'Merge',
+    'GroupBy',
+    'Join',
+    'Zip',
 ]
