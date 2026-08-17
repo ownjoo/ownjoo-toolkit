@@ -15,6 +15,7 @@ and in the top-level `README.md`'s `ops` section.
   - [Structure / fan-out-fan-in (`structure.py`)](#structure--fan-out-fan-in-structurepy)
   - [Key/value reshaping (`keys.py`)](#keyvalue-reshaping-keyspy)
   - [Time (`clock.py`)](#time-clockpy)
+  - [Escape hatch to `glom` (`glom_op.py`)](#escape-hatch-to-glom-glom_oppy)
   - [Whole-stream ops (`group.py`)](#whole-stream-ops-grouppy)
   - [Pipeline (`pipeline.py`)](#pipeline-pipelinepy)
 - [Going declarative: `register()` and `compile()`](#going-declarative-register-and-compile)
@@ -55,7 +56,8 @@ alphabetical or "everything that sounds like a stream method" grouping:
   object: one dict, one string, one number. Conditions (`And`, `Or`, `In`, `Eq`, ...),
   `When`, `Map`, `Sequence`, the structure-reshaping ops (`Extract`, `Resolve`,
   `MapField`, `Broadcast`, `Fanout`, `Merge`), the key/value ops (`Pick`, `Omit`,
-  `Rename`, `SetField`), and the time ops (`Now`, `Elapsed`) are all item-level.
+  `Rename`, `SetField`), the time ops (`Now`, `Elapsed`), and `Glom` (an optional-
+  dependency escape hatch to the `glom` library) are all item-level.
 - **Stream-level ops** (`StreamOp`, `__call__(self, iterable) -> Iterator[Any]`)
   operate on a whole iterable, generator-in/generator-out. `Iter`, `Filter`, `FlatMap`,
   `GroupBy`, `Join`, `Zip`, and `Pipeline` (which chains other `StreamOp`s) are
@@ -322,6 +324,47 @@ Fanout(checked_at=Now())({'id': 1})
 stale = Gt(input=Elapsed(since='created_at'), value=300)
 ```
 
+### Escape hatch to `glom` (`glom_op.py`)
+
+Item-level. `dig()`/`Digger` (jmespath) and `resolve()`/`Resolver` (attribute/method
+access) cover most extraction needs, but neither can express "call this method with
+real arguments partway through a path" -- `Resolve` only auto-calls zero-argument
+callables it encounters. The third-party [glom](https://glom.readthedocs.io/) library's
+`T` object can (`T.get_page(2).items`), along with a much larger spec vocabulary
+(`Coalesce`, `Check`, `Fold`, ...). Rather than reimplement any of that, `Glom` just
+delegates to `glom.glom(item, spec, **kwargs)` -- the same escape-hatch role `Map(fn)`
+plays for plain callables.
+
+| Op | Signature | Notes |
+|---|---|---|
+| `Glom` (`'glom'`) | `Glom(spec, **glom_kwargs)` | delegates to `glom.glom(item, spec, **glom_kwargs)`; `glom_kwargs` (`default=`, `skip_exc=`, `scope=`, ...) are forwarded unchanged, not reinterpreted |
+
+**`glom` is an optional dependency** -- installing/importing `oj_toolkit.ops` never
+requires it; only *constructing* a `Glom` instance does, via a lazy import inside
+`Glom.__init__`. Without it installed, `Glom(...)` raises a clear `ImportError` pointing
+at `pip install 'oj-toolkit[glom]'`; every other op is completely unaffected.
+
+```python
+from oj_toolkit.ops import Eq, Iter
+from oj_toolkit.ops.glom_op import Glom
+
+data = {'a': {'b': 'c'}, 'x': [1, 2, 3]}
+
+Glom(spec='a.b')(data)
+# 'c'
+Glom(spec={'val': 'a.b', 'items': 'x'})(data)
+# {'val': 'c', 'items': [1, 2, 3]}
+
+# drops straight into the same composition points as any other callable/Op
+Iter(fn=Glom(spec='a.b'))([{'a': {'b': 'ok'}}, {'a': {'b': 'bad'}}])
+Eq(input=Glom(spec='a.b'), value='ok')({'a': {'b': 'ok'}})  # True
+
+# the actual gap this fills -- glom's T object can pass real arguments along a path,
+# resolve() can only auto-call with none
+import glom
+Glom(spec=glom.T.get_page(2))(some_paginator_object)
+```
+
 ### Whole-stream ops (`group.py`)
 
 Stream-level; these either need to see the entire input before producing output, or
@@ -576,6 +619,11 @@ get_id = Resolve(path='json.data.id')  # calls response.json(), then digs into t
   to the value `fn` receives), but the write is always a shallow `{**item, key: ...}`
   on a copy -- writing back to a nested path isn't implemented, the same "minimal v1"
   call as `Join`.
+- **`Glom` is the one op with an optional third-party dependency.** `glom` is not
+  installed by installing `oj-toolkit` -- `import oj_toolkit.ops` never requires it,
+  only calling `Glom(spec=...)` does, via a lazy import inside `__init__`. Without it,
+  that raises `ImportError` pointing at `pip install 'oj-toolkit[glom]'`; every other
+  op is unaffected either way. Its own tests skip (not fail) when `glom` isn't present.
 - **`Resolve` and `dig()`/`Extract` are deliberately two separate engines, not one that
   auto-detects.** jmespath's dotted-path syntax means dict-key access (with its own
   wildcard/filter/projection grammar); an attribute-path's dots mean `getattr` plus

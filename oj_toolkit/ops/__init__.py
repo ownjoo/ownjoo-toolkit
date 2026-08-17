@@ -19,12 +19,19 @@ Every comparison's input= (and Elapsed's since=) accepts either a jmespath path
 (extracted via Digger) or any callable/Op, evaluated fresh against the item on every
 call -- this is what lets Elapsed/Resolve/Now plug into And/Or/Gt/etc. like any other
 value source: Gt(input=Elapsed(since='created_at'), value=300).
+
+Glom is an escape hatch to the third-party glom library's spec language, for cases
+dig()/resolve() can't express (e.g. calling a method with real arguments partway
+through a path). It's an optional dependency -- importing oj_toolkit.ops never
+requires glom, only constructing a Glom instance does. Install it with:
+pip install 'oj-toolkit[glom]'
 """
 
 from oj_toolkit.ops.base import ItemOp, Op, StreamOp
 from oj_toolkit.ops.clock import Elapsed, Now
 from oj_toolkit.ops.conditions import And, Eq, Exists, Ge, Gt, In, Le, Lt, Ne, Not, Or, Xor
 from oj_toolkit.ops.control import Map, Sequence, When
+from oj_toolkit.ops.glom_op import Glom
 from oj_toolkit.ops.group import GroupBy, Join, Zip
 from oj_toolkit.ops.iterate import Filter, FlatMap, Iter
 from oj_toolkit.ops.keys import Omit, Pick, Rename, SetField
@@ -58,6 +65,7 @@ __all__ = [
     "FlatMap",
     "Extract",
     "Resolve",
+    "Glom",
     "MapField",
     "Broadcast",
     "Fanout",

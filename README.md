@@ -1276,8 +1276,10 @@ equally be built from a declarative spec dict via `compile()`. Two "levels":
 - **Item-level ops** (`__call__(self, item) -> Any`): conditions (`And`, `Or`, `Xor`,
   `Not`, `In`, `Eq`, `Ne`, `Gt`, `Lt`, `Ge`, `Le`, `Exists`), control flow (`When`, `Map`,
   `Sequence`), structure manipulation (`Extract`, `Resolve`, `MapField`, `Broadcast`,
-  `Fanout`, `Merge`), key/value reshaping (`Pick`, `Omit`, `Rename`, `SetField`), and
-  time (`Now`, `Elapsed`).
+  `Fanout`, `Merge`), key/value reshaping (`Pick`, `Omit`, `Rename`, `SetField`), time
+  (`Now`, `Elapsed`), and `Glom` (an optional-dependency escape hatch to the
+  [glom](https://glom.readthedocs.io/) library's spec language -- `pip install
+  'oj-toolkit[glom]'`).
 - **Stream-level ops** (`__call__(self, iterable) -> Iterator[Any]`): `Iter` (the generic
   lift of any single-item callable, analogous to Python's `map()` builtin separating "the
   function" from "the iteration machinery"), `Filter`, `FlatMap`, `GroupBy`, `Join`, `Zip`,
