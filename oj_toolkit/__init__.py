@@ -22,6 +22,7 @@ Usage:
     from oj_toolkit import And, Or, Not, When, Iter, Filter, GroupBy, compile_ops
     from oj_toolkit import Now, Elapsed, Resolve, Pick, Omit, Rename, SetField
     from oj_toolkit import resolve, Resolver
+    from oj_toolkit import Glom  # requires: pip install 'oj-toolkit[glom]'
 """
 
 from oj_toolkit.asynchronous import async_timeout
@@ -51,6 +52,7 @@ from oj_toolkit.ops import (
     Filter,
     FlatMap,
     Ge,
+    Glom,
     GroupBy,
     Gt,
     In,
@@ -143,6 +145,7 @@ __all__ = [
     'FlatMap',
     'Extract',
     'Resolve',
+    'Glom',
     'MapField',
     'Broadcast',
     'Fanout',

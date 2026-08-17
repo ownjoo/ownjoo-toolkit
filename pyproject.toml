@@ -43,6 +43,10 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
     "pylint>=2.0",
+    "glom>=22.0",
+]
+glom = [
+    "glom>=22.0",
 ]
 
 [tool.black]
