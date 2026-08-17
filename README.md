@@ -11,7 +11,7 @@ This library is the single source of truth for shared utilities across ownjoo pr
 
 ### Modules
 
-- **`parsing`** — Type validation, datetime conversion, nested data extraction
+- **`parsing`** — Type validation, datetime conversion, nested data extraction, and attribute/method resolution on arbitrary Python objects
 - **`logging`** — Standardized logging configuration and progress tracking decorators
 - **`console`** — Terminal and console output utilities (stdout, stderr, formatting)
 - **`data`** — Flexible data handling mixins
@@ -972,6 +972,37 @@ get_name = Digger(path='user.name', exp=str, default='')
 # Returns: ['Alice', 'Bob']
 ```
 
+#### `resolve(obj, path, default=None, sep='.')` / `Resolver(path, default=None, sep='.')`
+
+`dig()`/`Digger`'s counterpart for arbitrary Python objects instead of JSON-shaped
+dicts/lists -- jmespath has no concept of attribute access or method calls, so it can't
+reach a plain object's attributes (a dataclass, an ORM model, an `httpx.Response`'s
+`.status_code`/`.headers`/`.json()`). `resolve()` walks a dotted path one segment at a
+time, trying dict-style lookup, then sequence-index lookup, then `getattr` -- and
+auto-calls anything callable it finds along the way, the same variable-resolution
+algorithm Django templates use for `{{ obj.attr.method }}`. `Resolver` is the
+pre-bound, reusable form, mirroring `Digger`.
+
+**Example:**
+
+```python
+from oj_toolkit.parsing import resolve, Resolver
+
+# response has .status_code and .json() -- not a dict
+resolve(response, 'status_code')      # 200
+resolve(response, 'json.data.id')     # calls response.json(), then digs into the dict
+resolve(response, 'missing', default='n/a')  # 'n/a'
+
+get_id = Resolver(path='json.data.id')
+[get_id(r) for r in responses]
+```
+
+> **`resolve()` and `dig()` are deliberately separate**, not one auto-detecting
+> function -- jmespath's dotted-path syntax means dict-key access (with its own
+> wildcard/filter/projection grammar), while an attribute-path's dots mean `getattr`
+> plus auto-calling. If a `resolve()` call bottoms out at a plain dict (e.g. a parsed
+> JSON body), reach for a second `dig()`/`Digger` call to navigate further into it.
+
 ### `data` Module
 
 #### `FlexMixin`
@@ -1244,13 +1275,19 @@ equally be built from a declarative spec dict via `compile()`. Two "levels":
 
 - **Item-level ops** (`__call__(self, item) -> Any`): conditions (`And`, `Or`, `Xor`,
   `Not`, `In`, `Eq`, `Ne`, `Gt`, `Lt`, `Ge`, `Le`, `Exists`), control flow (`When`, `Map`,
-  `Sequence`), and structure manipulation (`Extract`, `Broadcast`, `Fanout`, `Merge`).
+  `Sequence`), structure manipulation (`Extract`, `Resolve`, `MapField`, `Broadcast`,
+  `Fanout`, `Merge`), key/value reshaping (`Pick`, `Omit`, `Rename`, `SetField`), and
+  time (`Now`, `Elapsed`).
 - **Stream-level ops** (`__call__(self, iterable) -> Iterator[Any]`): `Iter` (the generic
   lift of any single-item callable, analogous to Python's `map()` builtin separating "the
-  function" from "the iteration machinery"), `Filter`, `FlatMap`, `GroupBy`, `Join`, `Zip`.
+  function" from "the iteration machinery"), `Filter`, `FlatMap`, `GroupBy`, `Join`, `Zip`,
+  and `Pipeline` (chains other `StreamOp`s in sequence -- the stream-level counterpart to
+  `Sequence`).
 
 Composition is plain nested constructor calls -- no operator overloading -- which maps
-1:1 onto a declarative spec.
+1:1 onto a declarative spec. Every comparison's `input=` accepts either a jmespath path
+or any callable/Op, evaluated fresh on every call -- see the full guide in
+`oj_toolkit/ops/README.md` for the design rationale and every op's reference.
 
 **Example: nested Python construction**
 

@@ -71,6 +71,20 @@ class TestEq(unittest.TestCase):
 
         # teardown
 
+    def test_should_accept_a_callable_input_instead_of_a_path(self):
+        # setup -- input= may be any callable/Op, evaluated fresh against the item,
+        # not just a jmespath path resolved via Digger
+        expected = True
+        op = Eq(input=lambda item: item['n'] * 2, value=10)
+
+        # execute
+        actual = op({'n': 5})
+
+        # assess
+        self.assertEqual(expected, actual)
+
+        # teardown
+
 
 if __name__ == '__main__':
     unittest.main()

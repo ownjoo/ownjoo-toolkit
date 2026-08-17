@@ -59,6 +59,33 @@ class TestExists(unittest.TestCase):
 
         # teardown
 
+    def test_should_accept_a_callable_input_instead_of_a_path(self):
+        # setup -- Exists has its own __call__, separate from _Comparison's, so the
+        # callable-input branch needs its own coverage
+        expected = True
+        op = Exists(input=lambda item: item.get('status'))
+
+        # execute
+        actual = op({'status': 'ok'})
+
+        # assess
+        self.assertEqual(expected, actual)
+
+        # teardown
+
+    def test_should_return_false_when_callable_input_resolves_to_none(self):
+        # setup
+        expected = False
+        op = Exists(input=lambda item: item.get('status'))
+
+        # execute
+        actual = op({})
+
+        # assess
+        self.assertEqual(expected, actual)
+
+        # teardown
+
 
 if __name__ == '__main__':
     unittest.main()

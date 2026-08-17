@@ -20,6 +20,8 @@ Usage:
     from oj_toolkit import install_exception_visibility
     from oj_toolkit import timeout, async_timeout
     from oj_toolkit import And, Or, Not, When, Iter, Filter, GroupBy, compile_ops
+    from oj_toolkit import Now, Elapsed, Resolve, Pick, Omit, Rename, SetField
+    from oj_toolkit import resolve, Resolver
 """
 
 from oj_toolkit.asynchronous import async_timeout
@@ -41,6 +43,7 @@ from oj_toolkit.logging import timed_async_generator, timed_generator
 from oj_toolkit.ops import (
     And,
     Broadcast,
+    Elapsed,
     Eq,
     Exists,
     Extract,
@@ -57,12 +60,20 @@ from oj_toolkit.ops import (
     Le,
     Lt,
     Map,
+    MapField,
     Merge,
     Ne,
     Not,
+    Now,
+    Omit,
     Op,
     Or,
+    Pick,
+    Pipeline,
+    Rename,
+    Resolve,
     Sequence,
+    SetField,
     StreamOp,
     When,
     Xor,
@@ -70,7 +81,16 @@ from oj_toolkit.ops import (
 )
 from oj_toolkit.ops import compile as compile_ops
 from oj_toolkit.ops import register as register_op
-from oj_toolkit.parsing import Digger, dig, dig_many, get_datetime, str_to_list, validate
+from oj_toolkit.parsing import (
+    Digger,
+    Resolver,
+    dig,
+    dig_many,
+    get_datetime,
+    resolve,
+    str_to_list,
+    validate,
+)
 from oj_toolkit.timing import timeout
 
 __all__ = [
@@ -83,6 +103,8 @@ __all__ = [
     'dig_many',
     'Digger',
     'str_to_list',
+    'resolve',
+    'Resolver',
     'Output',
     'Color',
     'ColoredText',
@@ -120,10 +142,19 @@ __all__ = [
     'Filter',
     'FlatMap',
     'Extract',
+    'Resolve',
+    'MapField',
     'Broadcast',
     'Fanout',
     'Merge',
+    'Pick',
+    'Omit',
+    'Rename',
+    'SetField',
+    'Now',
+    'Elapsed',
     'GroupBy',
     'Join',
     'Zip',
+    'Pipeline',
 ]

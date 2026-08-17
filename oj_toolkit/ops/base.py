@@ -5,7 +5,14 @@ same-named public instance attribute -- describe() and clone() below rely on tha
 convention, the same way FlexMixin.to_dict() relies on vars(self).
 """
 
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
+
+PathOrCallable = int | str | list[int | str] | Callable[[Any], Any]
+"""A jmespath path (bare int shorthand, or a fallback list -- resolved via Digger), or
+any callable/Op, called directly against the item on every evaluation instead. Used by
+_Comparison.input (conditions.py) and Elapsed.since (clock.py); the same str-or-callable
+pattern GroupBy.key (group.py) already used before this alias existed.
+"""
 
 
 class Op:

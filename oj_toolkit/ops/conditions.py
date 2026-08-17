@@ -1,41 +1,49 @@
 """Boolean condition ops: comparisons against an extracted field, and logic combinators.
 
-Every comparison op extracts a value from the item via dig()/Digger (see
-oj_toolkit.parsing.types) using an input= jmespath path, then compares it to value=.
+Every comparison op extracts a value from the item via an input=, then compares it to
+value=. input= is either a jmespath path (extracted via dig()/Digger, see
+oj_toolkit.parsing.types) or any callable/Op, evaluated fresh against the item on every
+call -- the same str-or-callable pattern GroupBy.key already uses in group.py. The
+callable form is what lets a dynamic value (e.g. Elapsed(since=...) in clock.py, or
+Resolve(path=...) in structure.py for non-dict objects) plug into any comparison.
 """
 
 import functools
 import operator
 from typing import Any
 
-from oj_toolkit.ops.base import ItemOp, Op
+from oj_toolkit.ops.base import ItemOp, Op, PathOrCallable
 from oj_toolkit.ops.registry import register
 from oj_toolkit.parsing import Digger, dig
 
 
 class _Comparison(ItemOp):  # pylint: disable=abstract-method
-    """Shared base for ops that extract a field via dig()/Digger and compare it to value.
+    """Shared base for ops that extract a field via input= and compare it to value.
 
     Not registered directly -- concrete subclasses (Eq, Ne, Gt, ...) register themselves.
     """
 
-    # pylint: disable-next=redefined-builtin
-    def __init__(self, input: str, value: Any = None, **dig_kwargs: Any) -> None:
+    # pylint: disable=redefined-builtin
+    def __init__(self, input: PathOrCallable, value: Any = None, **dig_kwargs: Any) -> None:
         """Initialize a comparison condition.
 
         Args:
-            input: A jmespath path (or bare int shorthand) identifying the field to
-                extract from the item. Passed straight to Digger.
+            input: A jmespath path/bare int shorthand/fallback list (extracted via
+                Digger), or any callable/Op -- called directly against the item on
+                every evaluation instead of going through Digger.
             value: The value to compare the extracted field against. Default: None.
-            **dig_kwargs: Additional Digger/dig() kwargs (e.g. exp=, default=, converter=).
+            **dig_kwargs: Additional Digger/dig() kwargs (e.g. exp=, default=,
+                converter=). Ignored when input= is a callable/Op.
         """
         self.input = input
         self.value = value
         self.dig_kwargs = dig_kwargs
-        self._digger = Digger(path=input, **dig_kwargs)
+        self._extract = input if callable(input) else Digger(path=input, **dig_kwargs)
+
+    # pylint: enable=redefined-builtin
 
     def _extracted(self, item: Any) -> Any:
-        return self._digger(item)
+        return self._extract(item)
 
     def clone(self, **overrides: Any) -> "_Comparison":
         kwargs = {"input": self.input, "value": self.value, **self.dig_kwargs, **overrides}
@@ -125,11 +133,15 @@ class In(_Comparison):
 class Exists(_Comparison):
     """True when input resolves to a non-None value on the item."""
 
-    # pylint: disable-next=redefined-builtin
-    def __init__(self, input: str, **dig_kwargs: Any) -> None:
+    # pylint: disable=redefined-builtin
+    def __init__(self, input: PathOrCallable, **dig_kwargs: Any) -> None:
         super().__init__(input=input, value=None, **dig_kwargs)
 
+    # pylint: enable=redefined-builtin
+
     def __call__(self, item: Any) -> bool:
+        if callable(self.input):
+            return self.input(item) is not None
         return dig(item, path=self.input, post_processor=None, **self.dig_kwargs) is not None
 
     def clone(self, **overrides: Any) -> "Exists":

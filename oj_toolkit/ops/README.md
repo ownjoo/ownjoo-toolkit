@@ -13,11 +13,15 @@ and in the top-level `README.md`'s `ops` section.
   - [Control flow (`control.py`)](#control-flow-controlpy)
   - [Stream shaping (`iterate.py`)](#stream-shaping-iteratepy)
   - [Structure / fan-out-fan-in (`structure.py`)](#structure--fan-out-fan-in-structurepy)
+  - [Key/value reshaping (`keys.py`)](#keyvalue-reshaping-keyspy)
+  - [Time (`clock.py`)](#time-clockpy)
   - [Whole-stream ops (`group.py`)](#whole-stream-ops-grouppy)
+  - [Pipeline (`pipeline.py`)](#pipeline-pipelinepy)
 - [Going declarative: `register()` and `compile()`](#going-declarative-register-and-compile)
 - [Recipes](#recipes)
 - [Gotchas and design notes](#gotchas-and-design-notes)
 - [Writing your own op](#writing-your-own-op)
+  - [Naming convention: mutation vs. copying](#naming-convention-mutation-vs-copying)
 
 ## Mental model
 
@@ -49,11 +53,13 @@ alphabetical or "everything that sounds like a stream method" grouping:
 
 - **Item-level ops** (`ItemOp`, `__call__(self, item) -> Any`) operate on a single
   object: one dict, one string, one number. Conditions (`And`, `Or`, `In`, `Eq`, ...),
-  `When`, `Map`, `Sequence`, and the structure-reshaping ops (`Extract`, `Broadcast`,
-  `Fanout`, `Merge`) are all item-level.
+  `When`, `Map`, `Sequence`, the structure-reshaping ops (`Extract`, `Resolve`,
+  `MapField`, `Broadcast`, `Fanout`, `Merge`), the key/value ops (`Pick`, `Omit`,
+  `Rename`, `SetField`), and the time ops (`Now`, `Elapsed`) are all item-level.
 - **Stream-level ops** (`StreamOp`, `__call__(self, iterable) -> Iterator[Any]`)
   operate on a whole iterable, generator-in/generator-out. `Iter`, `Filter`, `FlatMap`,
-  `GroupBy`, `Join`, `Zip` are stream-level.
+  `GroupBy`, `Join`, `Zip`, and `Pipeline` (which chains other `StreamOp`s) are
+  stream-level.
 
 `Iter` is the generic *lift* from item-level to stream-level -- analogous to how
 Python's `map()` builtin actually bundles two separate ideas into one call: "the
@@ -119,10 +125,15 @@ All item-level, all return `bool`.
 | `Xor` (`'xor'`) | `Xor(ops)` | **parity** XOR -- see [Gotchas](#gotchas-and-design-notes) |
 | `Not` (`'not'`) | `Not(op)` | negates a single op |
 
-`input=` is a [jmespath](https://jmespath.org/) path (or a bare `int` shorthand, or a
-`list` of fallback paths), extracted via `oj_toolkit.parsing.Digger` -- exactly the same
-path syntax as `dig()`/`Digger` elsewhere in this library. `**dig_kwargs` forwards
-straight through (`exp=`, `default=`, `converter=`, `pattern=`, etc.).
+`input=` is either a [jmespath](https://jmespath.org/) path (a bare `int` shorthand, or
+a `list` of fallback paths -- extracted via `oj_toolkit.parsing.Digger`, exactly the
+same path syntax as `dig()`/`Digger` elsewhere in this library), **or any callable/Op**,
+called directly against the item on every evaluation instead of going through `Digger`.
+`**dig_kwargs` (`exp=`, `default=`, `converter=`, `pattern=`, etc.) only applies to the
+path form -- it's ignored when `input=` is a callable. This is the same `str | Op`
+pattern `GroupBy.key` already uses (see [Whole-stream ops](#whole-stream-ops-grouppy)),
+and it's what lets a dynamic value source -- `Elapsed`, `Resolve`, `Now`, or your own --
+plug into any comparison exactly like a path string would:
 
 ```python
 from oj_toolkit.ops import And, Eq, In, Not
@@ -133,6 +144,15 @@ is_healthy = And(ops=[
 ])
 is_healthy({'status': 'ok', 'region': 'us-east'})   # True
 is_healthy({'status': 'fail', 'region': 'us-east'}) # False
+```
+
+```python
+from oj_toolkit.ops import Gt
+from oj_toolkit.ops.clock import Elapsed
+
+stale = Gt(input=Elapsed(since='created_at'), value=300)
+# "more than 300 seconds have elapsed since created_at" -- Elapsed is just
+# another callable dropped into input=, no special-casing needed anywhere else
 ```
 
 ### Control flow (`control.py`)
@@ -200,6 +220,8 @@ Item-level; reshape a single record.
 | Op | Signature | Notes |
 |---|---|---|
 | `Extract` (`'extract'`) | `Extract(path, **dig_kwargs)` | thin wrapper around `Digger` -- pulls one field out of an item |
+| `Resolve` (`'resolve'`) | `Resolve(path, default=None, sep='.')` | `Extract`'s counterpart for arbitrary Python objects instead of dicts/lists -- see [Gotchas](#gotchas-and-design-notes) |
+| `MapField` (`'map_field'`) | `MapField(key, fn, **dig_kwargs)` | applies `fn` to one field, leaving the rest of the item unchanged; the read side goes through `Digger`, the write is a flat top-level `key` (see [Gotchas](#gotchas-and-design-notes)) |
 | `Broadcast` (`'broadcast'`) | `Broadcast(children_path, fields, **dig_kwargs)` | combines selected parent fields with each of the parent's child records; returns a `list[dict]` |
 | `Fanout` (`'fanout'`) | `Fanout(**ops)` | runs several *named* item-level ops against the same item, collects results into a `dict` |
 | `Merge` (`'merge'`) | `Merge(ops)` | runs several *dict-producing* item-level ops against the same item and shallow-merges the results (later overwrites earlier) |
@@ -215,6 +237,31 @@ summarize({'status': 'ok', 'noise': 'ignored'})
 # {'status': 'ok', 'is_ok': True}
 ```
 
+```python
+from oj_toolkit.ops import Map, MapField, Sequence
+
+normalize = MapField(key='status', fn=Sequence(ops=[Map(fn=str.strip), Map(fn=str.lower)]))
+normalize({'status': '  OK  ', 'other': 'unchanged'})
+# {'status': 'ok', 'other': 'unchanged'}
+```
+
+`Resolve` navigates an arbitrary Python object -- not just dicts/lists -- via
+`oj_toolkit.parsing.resolve()`: dotted attribute access, auto-calling anything callable
+it finds along the way. This is `Extract`'s counterpart for something like an
+`httpx.Response`, where the data you want lives behind `.status_code`, `.headers`, or a
+`.json()` method call rather than dict keys:
+
+```python
+from oj_toolkit.ops import Eq, Resolve
+
+# a response object with .status_code and .json() -- not a dict
+is_ok = Eq(input=Resolve(path='status_code'), value=200)
+is_ok(response)  # True/False, whatever response actually is
+
+get_first_item_id = Resolve(path='json.data.items.0.id')
+get_first_item_id(response)  # calls response.json(), then digs into the resulting dict
+```
+
 `Fanout`'s constructor takes `**ops` on purpose: a spec dict
 `{"type": "fanout", "status": {...}, "is_ok": {...}}` maps directly onto
 `Fanout(status=..., is_ok=...)` with zero special-casing in `compile()` -- every
@@ -225,6 +272,56 @@ with a list of child records nested inside the parent. It returns a `list`, so p
 with `FlatMap` to expand a stream of parents into a stream of parent+child records (see
 [Recipes](#recipes) below).
 
+### Key/value reshaping (`keys.py`)
+
+Item-level; the "shape the output record" ops -- filtering or renaming keys that are
+already there, as opposed to `structure.py`'s field-level read/write ops.
+
+| Op | Signature | Notes |
+|---|---|---|
+| `Pick` (`'pick'`) | `Pick(keys)` | keeps only the listed keys; missing keys are silently skipped, not an error |
+| `Omit` (`'omit'`) | `Omit(keys)` | drops the listed keys, keeps everything else |
+| `Rename` (`'rename'`) | `Rename(mapping)` | renames keys per `{old_key: new_key}`; unlisted keys pass through under their original name |
+| `SetField` (`'set_field'`) | `SetField(key, value)` | sets `key` to a literal constant `value` -- `MapField`'s counterpart for "always this value" instead of "transform the existing value" |
+
+```python
+from oj_toolkit.ops import Omit, Pick, Rename, SetField
+
+record = {'id': 1, 'team_id': 'a', 'internal_notes': 'ignore me'}
+
+Pick(keys=['id', 'team_id'])(record)
+# {'id': 1, 'team_id': 'a'}
+Omit(keys=['internal_notes'])(record)
+# {'id': 1, 'team_id': 'a'}
+Rename(mapping={'team_id': 'team'})(record)
+# {'id': 1, 'team': 'a', 'internal_notes': 'ignore me'}
+SetField(key='reviewed', value=True)(record)
+# {'id': 1, 'team_id': 'a', 'internal_notes': 'ignore me', 'reviewed': True}
+```
+
+### Time (`clock.py`)
+
+Item-level. Neither op is a condition by itself -- they're value-producing legos meant
+to plug into a comparison's `input=` (see [Conditions](#conditions-conditionspy)), the
+same way `Elapsed`/`Resolve`/any other callable does.
+
+| Op | Signature | Notes |
+|---|---|---|
+| `Now` (`'now'`) | `Now()` | ignores the item; returns the current time (`time.time()`, epoch seconds) |
+| `Elapsed` (`'elapsed'`) | `Elapsed(since, **dig_kwargs)` | seconds elapsed (`time.time() - <resolved since>`); `since` is a path (via `Digger`) or any callable/Op |
+
+```python
+from oj_toolkit.ops import Fanout, Gt
+from oj_toolkit.ops.clock import Elapsed, Now
+
+# timestamp a record
+Fanout(checked_at=Now())({'id': 1})
+# {'checked_at': 1786807666.0778365}  -- illustrative; actual value is time.time() at call time
+
+# "more than 300 seconds have elapsed since created_at"
+stale = Gt(input=Elapsed(since='created_at'), value=300)
+```
+
 ### Whole-stream ops (`group.py`)
 
 Stream-level; these either need to see the entire input before producing output, or
@@ -233,7 +330,7 @@ combine multiple streams.
 | Op | Signature | Notes |
 |---|---|---|
 | `GroupBy` (`'group_by'`) | `GroupBy(key)` | groups the whole stream into `dict[key, list[item]]`; **eager**, returns a `dict`, not a generator (see [Gotchas](#gotchas-and-design-notes)) |
-| `Join` (`'join'`) | `Join(right, on, right_on=None, how='inner')` | joins the stream against an already-materialized `list` on an equality key; v1 scope only (see [Gotchas](#gotchas-and-design-notes)) |
+| `Join` (`'join'`) | `Join(right, on, right_on=None, how='inner')` | joins the stream against an already-materialized `list` on an equality key -- `on`/`right_on` accept a single path or a `list[str]` of paths for a composite key; v1 scope otherwise (see [Gotchas](#gotchas-and-design-notes)) |
 | `Zip` (`'zip'`) | `Zip(others, strict=False)` | thin wrapper around `zip()` |
 
 `key=` on `GroupBy` accepts either a jmespath path (`str`) or any callable
@@ -252,6 +349,86 @@ list(enrich(records))
 # [{'team': 'a', 'n': 1, 'team_id': 'a', 'name': 'Alpha'},
 #  {'team': 'b', 'n': 2, 'team_id': 'b', 'name': 'Beta'},
 #  {'team': 'a', 'n': 3, 'team_id': 'a', 'name': 'Alpha'}]
+```
+
+**`GroupBy` + `Join(how='left')` also covers "attach a list of matching children back
+onto their parents"** -- a separately-fetched bundle of children, redistributed into
+matching parents by equality, with the parent enriched (not multiplied the way a normal
+join would). Group the children, reshape each group into one row carrying the match
+key(s) plus the child list, then left-join the parents against that -- `on=` can be a
+composite key (`list[str]`) when a single field isn't enough to match on:
+
+```python
+from oj_toolkit.ops import GroupBy, Join
+
+checklists = [
+    {'benchmark_id': 'b1', 'revision': 'r1', 'title': 'c1'},
+    {'benchmark_id': 'b1', 'revision': 'r1', 'title': 'c2'},
+    {'benchmark_id': 'b2', 'revision': 'r1', 'title': 'c3'},
+]
+stigs = [
+    {'benchmark_id': 'b1', 'revision': 'r1', 'name': 'stig1'},
+    {'benchmark_id': 'b2', 'revision': 'r1', 'name': 'stig2'},
+    {'benchmark_id': 'b3', 'revision': 'r1', 'name': 'stig3'},
+]
+
+groups = GroupBy(key=lambda c: (c['benchmark_id'], c['revision']))(checklists)
+grouped_rows = [
+    {'benchmark_id': k[0], 'revision': k[1], 'matched_checklists': v}
+    for k, v in groups.items()
+]
+
+list(Join(right=grouped_rows, on=['benchmark_id', 'revision'], how='left')(stigs))
+# [{'benchmark_id': 'b1', 'revision': 'r1', 'name': 'stig1',
+#   'matched_checklists': [{'benchmark_id': 'b1', 'revision': 'r1', 'title': 'c1'},
+#                          {'benchmark_id': 'b1', 'revision': 'r1', 'title': 'c2'}]},
+#  {'benchmark_id': 'b2', 'revision': 'r1', 'name': 'stig2',
+#   'matched_checklists': [{'benchmark_id': 'b2', 'revision': 'r1', 'title': 'c3'}]},
+#  {'benchmark_id': 'b3', 'revision': 'r1', 'name': 'stig3'}]
+#  -- stig3 has no matched_checklists key at all (how='left' leaves non-matches
+#     unmerged) rather than an empty list; add a follow-up MapField/SetField step if
+#     you need the key always present.
+```
+
+### Pipeline (`pipeline.py`)
+
+Stream-level: `Iterable -> Iterator`. The stream-level counterpart to `Sequence`
+(control.py) -- threads an iterable through a flat list of `StreamOp`s, lazily, each
+stage's output feeding the next stage's input.
+
+| Op | Signature | Notes |
+|---|---|---|
+| `Pipeline` (`'pipeline'`) | `Pipeline(ops)` | chains `StreamOp`s in sequence; `ops=[]` passes the input through unchanged |
+
+Before `Pipeline`, chaining `StreamOp`s meant nested/sequential Python calls
+(`stage2(stage1(source))`) -- that already works and still does, but nothing let a
+multi-stage stream transform be described as a single `compile()`-able spec, since no
+existing `StreamOp` could name "the next stage to run." `Pipeline` is that name:
+
+```python
+from oj_toolkit.ops import Eq, Filter, Iter, Map
+from oj_toolkit.ops.pipeline import Pipeline
+
+pipeline = Pipeline(ops=[
+    Filter(condition=Eq(input='status', value='ok')),
+    Iter(fn=Map(fn=lambda item: {**item, 'seen': True})),
+])
+list(pipeline([{'status': 'ok'}, {'status': 'fail'}]))
+# [{'status': 'ok', 'seen': True}]
+```
+
+```python
+from oj_toolkit.ops import compile as compile_ops
+
+spec = {
+    'type': 'pipeline',
+    'ops': [
+        {'type': 'filter', 'condition': {'type': 'eq', 'input': 'status', 'value': 'ok'}},
+        {'type': 'iter', 'fn': {'type': 'map', 'fn': lambda item: {**item, 'seen': True}}},
+    ],
+}
+list(compile_ops(spec)([{'status': 'ok'}, {'status': 'fail'}]))
+# [{'status': 'ok', 'seen': True}]
 ```
 
 ## Going declarative: `register()` and `compile()`
@@ -357,6 +534,35 @@ list(only_healthy(summarize(records)))
 # [{'id': 1, 'healthy': True}]
 ```
 
+**Flag stale records by elapsed time:**
+
+```python
+import time
+
+from oj_toolkit.ops import Gt, Iter, Map
+from oj_toolkit.ops.clock import Elapsed
+
+is_stale = Gt(input=Elapsed(since='created_at'), value=300)
+flag_stale = Iter(fn=Map(fn=lambda item: {**item, 'stale': is_stale(item)}))
+
+now = time.time()
+records = [{'id': 1, 'created_at': now - 400}, {'id': 2, 'created_at': now - 100}]
+list(flag_stale(records))
+# [{'id': 1, 'created_at': ..., 'stale': True}, {'id': 2, 'created_at': ..., 'stale': False}]
+```
+
+**Check status and pull a field off a non-dict response object (e.g. `httpx.Response`):**
+
+```python
+from oj_toolkit.ops import Eq, Filter, Resolve
+
+only_ok = Filter(condition=Eq(input=Resolve(path='status_code'), value=200))
+get_id = Resolve(path='json.data.id')  # calls response.json(), then digs into the dict
+
+# responses = [httpx.get(...), ...]  -- anything with .status_code and .json()
+[get_id(response) for response in only_ok(responses)]  # doctest: +SKIP
+```
+
 > For chaining a stream-level op's *output* into another stream-level op, just call
 > them in sequence in Python (`only_healthy(summarize(records))`) -- `Sequence` is for
 > item-level chains, not stream-level ones. There's no dedicated stream-level
@@ -365,6 +571,26 @@ list(only_healthy(summarize(records)))
 
 ## Gotchas and design notes
 
+- **`MapField`'s `key` is a flat top-level dict key, not a jmespath path.** The read
+  side goes through `Digger` (so `exp=`/`default=`/etc. from `**dig_kwargs` still apply
+  to the value `fn` receives), but the write is always a shallow `{**item, key: ...}`
+  on a copy -- writing back to a nested path isn't implemented, the same "minimal v1"
+  call as `Join`.
+- **`Resolve` and `dig()`/`Extract` are deliberately two separate engines, not one that
+  auto-detects.** jmespath's dotted-path syntax means dict-key access (with its own
+  wildcard/filter/projection grammar); an attribute-path's dots mean `getattr` plus
+  auto-calling anything callable. Mixing the two under one function invites ambiguity.
+  If a `Resolve()` call bottoms out at a plain dict (e.g. a parsed JSON body from a
+  `.json()` call), reach for `Extract`/`dig()` to navigate further into it rather than
+  expecting `Resolve`'s path syntax to grow jmespath's filters/wildcards.
+- **`Pick` silently skips keys that aren't present** rather than raising `KeyError` or
+  including them with a `None` value -- a partial record still produces a (smaller)
+  result. `Omit` has no such gap since dropping a key that was never there is a no-op.
+- **Comparisons accept a callable/Op for `input=`, not just a path** (see
+  [Conditions](#conditions-conditionspy)) -- this is what lets `Elapsed`/`Resolve`/`Now`
+  plug into `Eq`/`Gt`/etc. `**dig_kwargs` is silently ignored in that case (there's no
+  `Digger` involved to forward them to), which is worth remembering if you pass both
+  a callable `input=` and, say, an `exp=` kwarg expecting it to do something.
 - **`Xor` is parity XOR, not "exactly one true."** `Xor(ops=[a, b, c])` is `True` when
   an *odd* number of operands are truthy -- the associative extension of Python's `^`
   to N operands. With 2 operands this matches "exactly one true," but with 3 it
@@ -427,3 +653,19 @@ If your constructor uses `**kwargs` (catch-all keyword args) rather than one
 same-named attribute per parameter, override `clone()` yourself -- see
 `_Comparison.clone()` in `conditions.py`, `Extract.clone()` / `Broadcast.clone()` /
 `Fanout.clone()` in `structure.py` for the pattern.
+
+### Naming convention: mutation vs. copying
+
+Every reshaping op in this package -- `Merge`, `MapField`, `Pick`, `Omit`, `Rename`,
+`SetField`, `Fanout`, `Broadcast` -- builds and returns a **new** dict rather than
+touching its input. This is tested, not just documented: several of them have an
+explicit `test_should_not_mutate_the_original_item` test. It's the unmarked default,
+the same way `sorted()` and `{**a, **b}` are Python's copy-by-default counterparts to
+`list.sort()` and `dict.update()`.
+
+If you write an op that *intentionally* mutates its input in place (e.g. for memory or
+performance reasons on very large structures), don't give it a name that could be
+mistaken for the copy-by-default convention above. Name it so the mutation is obvious
+from the call site -- a `Mutate`-prefixed name (`Mutate(...)`, or a `Mutate`-prefixed
+family if more than one is ever needed) is the reserved pattern for that. Nothing in
+this package mutates its input today; if that changes, the name should say so.

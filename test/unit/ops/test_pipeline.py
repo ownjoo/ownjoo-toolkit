@@ -24,6 +24,7 @@ from oj_toolkit.ops import (
     Iter,
     Join,
     Map,
+    MapField,
     Merge,
     Not,
     Or,
@@ -81,12 +82,7 @@ class TestFullPipeline(unittest.TestCase):
 
         # 2. trim/lowercase the noisy status field before anything compares against it
         normalize_status = Iter(
-            fn=Map(
-                fn=lambda blade: {
-                    **blade,
-                    "status": Sequence(ops=[Map(fn=str.strip), Map(fn=str.lower)])(blade["status"]),
-                }
-            )
+            fn=MapField(key="status", fn=Sequence(ops=[Map(fn=str.strip), Map(fn=str.lower)]))
         )
 
         # 3. drop anything that isn't actively in service
