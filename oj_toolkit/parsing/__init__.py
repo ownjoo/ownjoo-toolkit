@@ -5,8 +5,20 @@ Provides functions for:
 - Parsing datetime values from multiple formats
 - Validating and converting values with custom validators and converters
 - Extracting and validating nested values from dicts/lists (jmespath-backed)
+- Resolving attribute/method paths on arbitrary Python objects (dig()'s counterpart
+  for non-dict/list data, e.g. httpx.Response)
 """
 
+from oj_toolkit.parsing.resolve import Resolver, resolve
 from oj_toolkit.parsing.types import Digger, dig, dig_many, get_datetime, str_to_list, validate
 
-__all__ = ['validate', 'get_datetime', 'dig', 'dig_many', 'Digger', 'str_to_list']
+__all__ = [
+    "validate",
+    "get_datetime",
+    "dig",
+    "dig_many",
+    "Digger",
+    "str_to_list",
+    "resolve",
+    "Resolver",
+]
