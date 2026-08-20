@@ -11,7 +11,7 @@ This library is the single source of truth for shared utilities across ownjoo pr
 
 ### Modules
 
-- **`parsing`** — Type validation, datetime conversion, nested data extraction, and attribute/method resolution on arbitrary Python objects
+- **`parsing`** — Type validation, datetime conversion, nested data extraction, attribute/method resolution on arbitrary Python objects, and stripping HTML down to its title + visible text
 - **`logging`** — Standardized logging configuration and progress tracking decorators
 - **`console`** — Terminal and console output utilities (stdout, stderr, formatting)
 - **`data`** — Flexible data handling mixins
@@ -1002,6 +1002,32 @@ get_id = Resolver(path='json.data.id')
 > wildcard/filter/projection grammar), while an attribute-path's dots mean `getattr`
 > plus auto-calling. If a `resolve()` call bottoms out at a plain dict (e.g. a parsed
 > JSON body), reach for a second `dig()`/`Digger` call to navigate further into it.
+
+#### `strip_html(html, drop_tags=DEFAULT_DROP_TAGS)`
+
+*Optional dependency -- requires `beautifulsoup4`: `pip install 'oj-toolkit[html]'`*
+
+For the case where an API redirects to an HTML page instead of returning the expected
+payload (an auth challenge, a load balancer error page, a captive portal) -- pulls out
+what's actually informative and drops what isn't. The `<title>` (even though it lives
+in `<head>`) is captured and prepended as the first line, since it's often the single
+most useful signal ("Sign In - Acme SSO"); `script`, `style`, `head`, `meta`, `link`,
+`noscript`, `svg`, and `template` are stripped before the remaining visible text is
+extracted.
+
+**Example:**
+
+```python
+from oj_toolkit.parsing import strip_html
+
+response = api_client.get('/data')  # returns an HTML login page instead of JSON
+strip_html(response.text)
+# 'Sign In - Acme SSO\nYour session has expired. Please log in again.'
+
+# Drop additional tags (e.g. nav chrome), on top of the defaults
+strip_html(html, drop_tags=('script', 'style', 'head', 'meta', 'link', 'noscript',
+                             'svg', 'template', 'nav', 'footer'))
+```
 
 ### `data` Module
 

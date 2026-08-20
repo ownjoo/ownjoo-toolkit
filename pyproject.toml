@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oj-toolkit"
-version = "0.5.1"
+version = "0.6.0"
 description = "Centralized shared utilities for ownjoo projects: standardized logging config, type validation, data parsing, console output, and async utilities"
 authors = [
     { name = "Speedy", email = "speedy@ownjoo.org" }
@@ -44,6 +44,10 @@ dev = [
     "mypy>=1.0",
     "pylint>=2.0",
     "glom>=22.0",
+    "beautifulsoup4>=4.11",
+]
+html = [
+    "beautifulsoup4>=4.11",
 ]
 glom = [
     "glom>=22.0",
